@@ -9,9 +9,8 @@ from streamlit_mic_recorder import speech_to_text
 TEMP_AUDIO_DIR = "tts_tmp"
 # ============================
 
-# 1. Setup Groq (same API key and model)
-client = Groq(api_key="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")
 
+# --------- HELPERS ---------
 
 def ensure_tmp_dir():
     if not os.path.exists(TEMP_AUDIO_DIR):
@@ -29,7 +28,16 @@ def speak_to_browser(text: str) -> str:
     return filename
 
 
-def get_recipe_from_ai(dish: str):
+@st.cache_resource
+def get_groq_client():
+    """
+    Create Groq client using API key from Streamlit secrets.[web:3][web:30]
+    """
+    api_key = st.secrets["GROQ_API_KEY"]
+    return Groq(api_key=api_key)
+
+
+def get_recipe_from_ai(client: Groq, dish: str):
     """
     Groq: detailed ingredients (with measurements) + numbered cooking steps.[web:9][web:93]
     """
@@ -74,8 +82,7 @@ def get_recipe_from_ai(dish: str):
             title = line
             continue
         if not description and not lower.startswith("ingredients") and not lower.startswith("steps"):
-            # first non-title line will be description
-            if not line.lower().startswith("recipe:"):
+            if not lower.startswith("recipe:"):
                 description = line
 
         if lower.startswith("ingredients"):
@@ -95,7 +102,7 @@ def get_recipe_from_ai(dish: str):
     return title, description, ingredients, steps
 
 
-def chat_about_cooking(dish: str, user_question: str) -> str:
+def chat_about_cooking(client: Groq, dish: str, user_question: str) -> str:
     """
     Groq: free-form cooking Q&A about the current dish or general cooking.[web:9][web:80]
     """
@@ -120,11 +127,15 @@ def chat_about_cooking(dish: str, user_question: str) -> str:
     return answer
 
 
-# ============ STREAMLIT UI ============
+# ============ STREAMLIT APP ============
 
 st.set_page_config(page_title="Cooking Voice Assistant", page_icon="🍳")
 st.title("🍳 Cooking Voice Assistant")
 
+# Groq client (uses st.secrets["GROQ_API_KEY"])
+client = get_groq_client()
+
+# Session state
 state = st.session_state
 if "dish" not in state:
     state.dish = ""
@@ -135,9 +146,9 @@ if "steps" not in state:
 if "current_step" not in state:
     state.current_step = 0
 if "chat_history" not in state:
-    state.chat_history = []  # list of (role, text)
+    state.chat_history = []
 
-
+# ---- Section 1: Choose dish ----
 st.markdown("### 1. Choose a dish")
 
 col1, col2 = st.columns(2)
@@ -162,13 +173,12 @@ if st.button("Get recipe"):
         st.warning("Please provide a dish name.")
     else:
         state.dish = dish_text
-        title, desc, ingredients, steps = get_recipe_from_ai(state.dish)
+        title, desc, ingredients, steps = get_recipe_from_ai(client, state.dish)
         state.ingredients = ingredients
         state.steps = steps
         state.current_step = 0
         state.chat_history.append(("assistant", f"Loaded recipe for {state.dish}"))
 
-        # Speak description + ingredients
         to_speak = []
         if title:
             to_speak.append(title)
@@ -183,6 +193,7 @@ if st.button("Get recipe"):
             audio_path = speak_to_browser(full_text)
             st.audio(audio_path)
 
+# ---- Section 2: Show recipe ----
 st.markdown("### 2. Recipe details")
 
 if state.dish:
@@ -196,6 +207,7 @@ if state.steps:
     for i, step in enumerate(state.steps, start=1):
         st.write(f"{i}. {step}")
 
+# ---- Section 3: Voice commands & Q&A ----
 st.markdown("### 3. Voice commands & questions")
 
 if not state.steps:
@@ -229,9 +241,9 @@ else:
         else:
             state.chat_history.append(("user", user_cmd))
 
-            # Control commands
             response_text = ""
 
+            # Control commands
             if any(w in user_cmd for w in ["next", "next step", "go next", "continue"]):
                 if state.current_step < len(state.steps):
                     response_text = f"Step {state.current_step + 1}. {state.steps[state.current_step]}"
@@ -257,17 +269,17 @@ else:
                 else:
                     response_text = "I do not have an ingredients list loaded."
             else:
-                # Free-form cooking question
-                answer = chat_about_cooking(state.dish, user_cmd)
+                # Free‑form cooking question
+                answer = chat_about_cooking(client, state.dish, user_cmd)
                 response_text = answer
 
             state.chat_history.append(("assistant", response_text))
 
-            # Show + speak
             st.write("**Assistant:**", response_text)
             audio_path = speak_to_browser(response_text)
             st.audio(audio_path)
 
+# ---- Section 4: History ----
 st.markdown("### 4. Conversation history")
 for role, text in state.chat_history:
     st.write(f"**{role.capitalize()}:** {text}")
