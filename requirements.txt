@@ -1,0 +1,5 @@
+groq==0.11.0
+streamlit
+gTTS
+streamlit-mic-recorder
+SpeechRecognition
