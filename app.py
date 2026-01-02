@@ -19,7 +19,7 @@ def ensure_tmp_dir():
 
 def speak_to_browser(text: str) -> str:
     """
-    Generate an MP3 from text and return its path so Streamlit can play it.[web:108][web:111]
+    Generate an MP3 from text and return its path so Streamlit can play it.
     """
     ensure_tmp_dir()
     filename = os.path.join(TEMP_AUDIO_DIR, f"{uuid.uuid4().hex}.mp3")
@@ -28,18 +28,20 @@ def speak_to_browser(text: str) -> str:
     return filename
 
 
-@st.cache_resource
-def get_groq_client():
+def get_groq_client() -> Groq:
     """
-    Create Groq client using API key from Streamlit secrets.[web:3][web:30]
+    Create Groq client using API key from Streamlit secrets.
     """
-    api_key = st.secrets["GROQ_API_KEY"]
+    api_key = st.secrets.get("GROQ_API_KEY")
+    if not api_key:
+        st.error("GROQ_API_KEY is missing in Streamlit secrets.")
+        st.stop()
     return Groq(api_key=api_key)
 
 
 def get_recipe_from_ai(client: Groq, dish: str):
     """
-    Groq: detailed ingredients (with measurements) + numbered cooking steps.[web:9][web:93]
+    Groq: detailed ingredients (with measurements) + numbered cooking steps.
     """
     prompt = (
         f"You are a professional chef helping a beginner cook {dish}.\n\n"
@@ -104,7 +106,7 @@ def get_recipe_from_ai(client: Groq, dish: str):
 
 def chat_about_cooking(client: Groq, dish: str, user_question: str) -> str:
     """
-    Groq: free-form cooking Q&A about the current dish or general cooking.[web:9][web:80]
+    Groq: free-form cooking Q&A about the current dish or general cooking.
     """
     prompt = (
         "You are a helpful cooking assistant. "
@@ -132,10 +134,8 @@ def chat_about_cooking(client: Groq, dish: str, user_question: str) -> str:
 st.set_page_config(page_title="Cooking Voice Assistant", page_icon="🍳")
 st.title("🍳 Cooking Voice Assistant")
 
-# Groq client (uses st.secrets["GROQ_API_KEY"])
 client = get_groq_client()
 
-# Session state
 state = st.session_state
 if "dish" not in state:
     state.dish = ""
@@ -179,6 +179,7 @@ if st.button("Get recipe"):
         state.current_step = 0
         state.chat_history.append(("assistant", f"Loaded recipe for {state.dish}"))
 
+        # Speak description + ingredients
         to_speak = []
         if title:
             to_speak.append(title)
